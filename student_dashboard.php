@@ -3,14 +3,14 @@
 require_once 'db_connect.php';
 session_start();
 
-// Authentication Guard
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Student') {
+// Role-specific Authentication Guard
+if (!isset($_SESSION['student_id'])) {
     header("Location: login.php");
     exit();
 }
 
-$student_id = $_SESSION['user_id'];
-$student_name = $_SESSION['full_name'];
+$student_id = $_SESSION['student_id'];
+$student_name = $_SESSION['student_name'];
 
 // Handle Book Appointment Request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_appointment'])) {
@@ -92,57 +92,86 @@ try {
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <script>
-        tailwind.config = {
+        // 1. Immediate Theme Application (Iwas white flash)
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        })();
+
+        // 2. Toggle Function
+        function toggleTheme() {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // 3. Tailwind Configuration
+        window.tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
-                    fontFamily: {
-                        sans: ['Plus Jakarta Sans', 'sans-serif'],
-                    },
+                    fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
                     colors: {
-                        slate: {
-                            900: '#0f172a',
-                            950: '#020617',
-                        },
-                        indigo: {
-                            500: '#6366f1',
-                            600: '#4f46e5',
-                        },
-                        violet: {
-                            500: '#8b5cf6',
-                            600: '#7c3aed',
-                        }
+                        slate: { 900: '#0f172a', 950: '#020617' },
+                        indigo: { 500: '#6366f1', 600: '#4f46e5' },
+                        violet: { 500: '#8b5cf6', 600: '#7c3aed' }
                     }
                 }
             }
         }
     </script>
 
-    <style>
-        body { background-color: #0f172a; }
-        .glass {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+    <!-- Fixed Style Tag for Tailwind CDN -->
+    <style type="text/tailwindcss">
+        @layer base {
+            body { 
+                @apply bg-slate-50 text-slate-900 transition-colors duration-300; 
+            }
+            .dark body { 
+                @apply bg-slate-950 text-slate-100; 
+            }
         }
-        .glow-card {
-            position: relative;
-            overflow: hidden;
+
+        @layer components {
+            .glass {
+                @apply bg-white/70 backdrop-blur-xl border border-slate-200/50 shadow-sm transition-all duration-300;
+            }
+            .dark .glass {
+                @apply bg-slate-900/70 border-slate-800/50 shadow-none;
+            }
+            
+            .glow-card {
+                @apply relative overflow-hidden;
+            }
         }
+
+        /* Custom Glow Effect for Student Cards */
         .glow-card::after {
             content: '';
-            position: absolute;
+            @apply absolute pointer-events-none;
             top: -50%;
             left: -50%;
             width: 200%;
             height: 200%;
             background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, transparent 70%);
             z-index: 0;
-            pointer-events: none;
+        }
+
+        .dark .glow-card::after {
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
         }
     </style>
 </head>
-<body class="font-sans antialiased text-slate-100 min-h-screen">
+<body class="font-sans antialiased min-h-screen">
 
     <!-- Header -->
     <nav class="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
@@ -154,11 +183,15 @@ try {
         </div>
         
         <div class="flex items-center gap-4">
+            <button onclick="toggleTheme()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" title="Toggle Theme">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden dark:block"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="block dark:hidden"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
             <div class="text-right mr-2">
                 <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest">Student</p>
-                <p class="text-sm font-bold text-slate-200"><?php echo htmlspecialchars($student_name); ?></p>
+                <p class="text-sm font-bold text-slate-600 dark:text-slate-200"><?php echo htmlspecialchars($student_name); ?></p>
             </div>
-            <a href="logout.php" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors flex items-center gap-2">
+            <a href="logout.php" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold transition-colors flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 Logout
             </a>

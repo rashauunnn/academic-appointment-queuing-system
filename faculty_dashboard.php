@@ -3,14 +3,14 @@
 require_once 'db_connect.php';
 session_start();
 
-// Authentication Guard
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Faculty') {
+// Role-specific Authentication Guard
+if (!isset($_SESSION['faculty_id'])) {
     header("Location: login.php");
     exit();
 }
 
-$faculty_id = $_SESSION['user_id'];
-$faculty_name = $_SESSION['full_name'];
+$faculty_id = $_SESSION['faculty_id'];
+$faculty_name = $_SESSION['faculty_name'];
 
 // Handle Action (Call, Complete, Cancel, No-Show, Call Next, Update Status)
 if (isset($_GET['action'])) {
@@ -119,7 +119,31 @@ try {
     <title>Faculty Dashboard | Academic Appointment System</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
     <script>
+        // 1. Immediate Theme Application (Iwas "white flash")
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        })();
+
+        // 2. Toggle Function
+        function toggleTheme() {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // 3. Tailwind Configuration
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -133,12 +157,29 @@ try {
             }
         }
     </script>
-    <style>
-        body { background-color: #0f172a; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); }
+
+    <!-- CRITICAL: Added type="text/tailwindcss" -->
+    <style type="text/tailwindcss">
+        @layer base {
+            body { 
+                @apply bg-slate-50 text-slate-900 transition-colors duration-300; 
+            }
+            .dark body { 
+                @apply bg-slate-950 text-slate-100; 
+            }
+        }
+
+        @layer components {
+            .glass { 
+                @apply bg-white/70 backdrop-blur-xl border border-slate-200/50 shadow-sm transition-all duration-300; 
+            }
+            .dark .glass { 
+                @apply bg-slate-900/70 border-slate-800/50 shadow-none; 
+            }
+        }
     </style>
 </head>
-<body class="font-sans antialiased text-slate-100 min-h-screen">
+<body class="font-sans antialiased min-h-screen">
     <!-- Header -->
     <nav class="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
         <div class="flex items-center gap-3">
@@ -148,9 +189,13 @@ try {
             <span class="font-bold text-xl tracking-tight">Faculty Portal</span>
         </div>
         <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2 mr-4 bg-slate-900/50 p-1.5 rounded-xl border border-slate-700/50">
+            <button onclick="toggleTheme()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" title="Toggle Theme">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden dark:block"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="block dark:hidden"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+            <div class="flex items-center gap-2 mr-4 bg-slate-100 dark:bg-slate-900/50 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/50">
                 <span class="text-[10px] font-bold text-slate-500 uppercase ml-2 mr-1">Status</span>
-                <select onchange="window.location.href='faculty_dashboard.php?action=update_status&status_val=' + this.value" class="bg-slate-800 text-xs font-bold text-slate-200 border-none rounded-lg py-1 px-3 focus:ring-0 cursor-pointer">
+                <select onchange="window.location.href='faculty_dashboard.php?action=update_status&status_val=' + this.value" class="bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-200 border-none rounded-lg py-1 px-3 focus:ring-0 cursor-pointer">
                     <option value="Available" <?php echo $current_status === 'Available' ? 'selected' : ''; ?>>Available</option>
                     <option value="On Break" <?php echo $current_status === 'On Break' ? 'selected' : ''; ?>>On Break</option>
                     <option value="Out of Office" <?php echo $current_status === 'Out of Office' ? 'selected' : ''; ?>>Out of Office</option>
@@ -162,9 +207,12 @@ try {
             </div>
             <div class="text-right mr-2">
                 <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest">Logged In as</p>
-                <p class="text-sm font-bold text-slate-200"><?php echo htmlspecialchars($faculty_name); ?></p>
+                <p class="text-sm font-bold text-slate-600 dark:text-slate-200"><?php echo htmlspecialchars($faculty_name); ?></p>
             </div>
-            <a href="logout.php" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-semibold transition-colors">Logout</a>
+            <a href="logout.php" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold transition-colors flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                Logout
+            </a>
         </div>
     </nav>
 
