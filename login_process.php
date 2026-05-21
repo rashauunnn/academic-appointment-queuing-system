@@ -1,7 +1,7 @@
 <?php
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
 // login_process.php
 require_once 'db_connect.php';
-session_start();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $school_id = $_POST['school_id'] ?? '';
@@ -24,6 +24,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id'] = $user['user_id'];
             $_SESSION['full_name'] = $user['full_name'];
             $_SESSION['role'] = $user['role'];
+
+            // Maintenance Mode Check (Non-Admins)
+            if ($user['role'] !== 'Admin') {
+                try {
+                    $m_status = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'maintenance_mode'")->fetchColumn();
+                    if ($m_status === '1') {
+                        header("Location: maintenance.php");
+                        exit();
+                    }
+                } catch (PDOException $e) {}
+            }
 
             switch ($user['role']) {
                 case 'Student':
