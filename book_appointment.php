@@ -17,7 +17,7 @@ try {
     $now_str = date('Y-m-d H:i:s');
     $pdo->prepare("UPDATE users SET current_status = 'Available', busy_until = NULL WHERE current_status = 'Busy' AND busy_until <= ?")->execute([$now_str]);
 
-    $faculty_stmt = $pdo->prepare("SELECT user_id, full_name, current_status FROM users WHERE role = 'Faculty'");
+    $faculty_stmt = $pdo->prepare("SELECT user_id, full_name, current_status, busy_until FROM users WHERE role = 'Faculty'");
     $faculty_stmt->execute();
     $faculties = $faculty_stmt->fetchAll();
 } catch (PDOException $e) {
@@ -34,6 +34,7 @@ $success = $_GET['success'] ?? '';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Book Appointment | Academic Appointment System</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -99,7 +100,7 @@ $success = $_GET['success'] ?? '';
                 <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest">Student</p>
                 <p class="text-sm font-bold text-slate-600 dark:text-slate-200"><?php echo htmlspecialchars($student_name); ?></p>
             </div>
-            <a href="logout.php" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold transition-colors flex items-center gap-2">
+            <a href="logout.php" onclick="handleLogout(event)" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold transition-colors flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 Logout
             </a>
@@ -167,15 +168,19 @@ $success = $_GET['success'] ?? '';
                                 <option value="">-- Choose Faculty --</option>
                                 <?php foreach($faculties as $faculty): 
                                     $f_status_lower = str_replace(' ', '_', strtolower($faculty['current_status'] ?? 'available'));
-                                    $isUnavailable = ($f_status_lower === 'busy' || $f_status_lower === 'on_leave');
+                                    $isClosed = ($f_status_lower === 'on_leave');
                                     $suffix = "";
                                     if ($f_status_lower === 'busy') {
-                                        $suffix = " (Busy)";
+                                        if (!empty($faculty['busy_until'])) {
+                                            $suffix = " (Busy - Available at " . date('h:i A', strtotime($faculty['busy_until'])) . ")";
+                                        } else {
+                                            $suffix = " (Busy)";
+                                        }
                                     } elseif ($f_status_lower === 'on_leave') {
                                         $suffix = " (On Leave)";
                                     }
                                 ?>
-                                    <option value="<?php echo $faculty['user_id']; ?>" <?php echo $isUnavailable ? 'disabled class="text-slate-400 bg-slate-800"' : ''; ?>>
+                                    <option value="<?php echo $faculty['user_id']; ?>" <?php echo $isClosed ? 'disabled class="text-slate-400 bg-slate-800"' : ''; ?>>
                                         <?php echo htmlspecialchars($faculty['full_name']) . $suffix; ?>
                                     </option>
                                 <?php endforeach; ?>
@@ -313,12 +318,14 @@ $success = $_GET['success'] ?? '';
             let bookedSlots = [];
             let isFacultyUnavailable = false;
             let currentFacultyStatus = 'Available';
+            let busyUntil = null;
             if (facultyId && selectedMonth && selectedDay) {
                 const cacheKey = `${facultyId}-${selectedMonth}-${selectedDay}`;
                 if (availabilityCache[cacheKey]) {
                     blockedSlots = availabilityCache[cacheKey].unavailable_slots;
                     bookedSlots = availabilityCache[cacheKey].booked_slots;
                     currentFacultyStatus = availabilityCache[cacheKey].faculty_status;
+                    busyUntil = availabilityCache[cacheKey].busy_until || null;
                     updateFacultyBadge(currentFacultyStatus);
                 } else {
                     try {
@@ -329,36 +336,64 @@ $success = $_GET['success'] ?? '';
                             blockedSlots = data.unavailable_slots;
                             bookedSlots = data.booked_slots;
                             currentFacultyStatus = data.faculty_status;
+                            busyUntil = data.busy_until || null;
                             updateFacultyBadge(currentFacultyStatus);
                         }
                     } catch (e) { console.error("Fetch failed", e); }
                 }
                 
                 const statusNormalized = currentFacultyStatus.toLowerCase().replace(' ', '_');
-                isFacultyUnavailable = (statusNormalized === 'busy' || statusNormalized === 'on_leave');
+                isFacultyUnavailable = (statusNormalized === 'on_leave');
             } else {
                 statusBadge.classList.add('hidden');
             }
             
-            // Block/Disable slot selection & submit if the selected faculty is Busy or On Leave
+            // Block/Disable slot selection & submit if the selected faculty is On Leave, or alert if Busy
             const submitBtn = document.querySelector('form[action="booking_process.php"] button[type="submit"]');
             let formWarningMsg = document.getElementById('faculty-form-warning');
             
             if (isFacultyUnavailable) {
+                const msg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> On Leave: This instructor is not accepting appointments right now.`;
                 if (!formWarningMsg) {
                     formWarningMsg = document.createElement('div');
                     formWarningMsg.id = 'faculty-form-warning';
                     formWarningMsg.className = 'p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-bold flex items-center gap-3 mb-6 animate-in slide-in-from-top-4 duration-300';
-                    formWarningMsg.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> This faculty is currently ${currentFacultyStatus}. Booking is suspended.`;
+                    formWarningMsg.innerHTML = msg;
                     const formEl = document.querySelector('form[action="booking_process.php"]');
                     formEl.insertBefore(formWarningMsg, formEl.firstChild);
                 } else {
-                    formWarningMsg.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> This faculty is currently ${currentFacultyStatus}. Booking is suspended.`;
+                    formWarningMsg.className = 'p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-bold flex items-center gap-3 mb-6';
+                    formWarningMsg.innerHTML = msg;
                     formWarningMsg.classList.remove('hidden');
                 }
                 if (submitBtn) {
                     submitBtn.disabled = true;
                     submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                }
+            } else if (currentFacultyStatus === 'Busy' && busyUntil) {
+                let busyTimeStr = "";
+                try {
+                    const busyDate = new Date(busyUntil.replace(/-/g, '/'));
+                    busyTimeStr = busyDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } catch (err) {
+                    busyTimeStr = busyUntil;
+                }
+                const msg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Busy: This instructor is unavailable until ${busyTimeStr}. Today's slots before this time are locked.`;
+                if (!formWarningMsg) {
+                    formWarningMsg = document.createElement('div');
+                    formWarningMsg.id = 'faculty-form-warning';
+                    formWarningMsg.className = 'p-4 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-500 text-sm font-bold flex items-center gap-3 mb-6 animate-in slide-in-from-top-4 duration-300';
+                    formWarningMsg.innerHTML = msg;
+                    const formEl = document.querySelector('form[action="booking_process.php"]');
+                    formEl.insertBefore(formWarningMsg, formEl.firstChild);
+                } else {
+                    formWarningMsg.className = 'p-4 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-500 text-sm font-bold flex items-center gap-3 mb-6';
+                    formWarningMsg.innerHTML = msg;
+                    formWarningMsg.classList.remove('hidden');
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                 }
             } else {
                 if (formWarningMsg) {
@@ -378,18 +413,37 @@ $success = $_GET['success'] ?? '';
                 
                 let isBlocked = false;
                 let blockReason = "";
-
+ 
                 // Check Past Hour
                 if (isToday && slotHour <= currentHour) {
                     isBlocked = true;
                 }
-
+ 
                 // Check Already Booked
                 if (bookedSlots.includes(slotRange)) {
                     isBlocked = true;
                     blockReason = "Already Booked";
                 }
 
+                // Block busy duration slots
+                if (currentFacultyStatus === 'Busy' && busyUntil && isToday) {
+                    try {
+                        const busyUntilDate = new Date(busyUntil.replace(/-/g, '/'));
+                        const slotPart = slotRange.split(' - ')[0];
+                        const nowYear = now.getFullYear();
+                        const slotDate = new Date(nowYear, selectedMonth - 1, selectedDay);
+                        const [timeStr, ampm] = slotPart.split(' ');
+                        let [h, m] = timeStr.split(':').map(Number);
+                        if (ampm === 'PM' && h < 12) h += 12;
+                        if (ampm === 'AM' && h === 12) h = 0;
+                        slotDate.setHours(h, m, 0, 0);
+                        if (slotDate < busyUntilDate) {
+                            isBlocked = true;
+                            blockReason = "Instructor Busy";
+                        }
+                    } catch (e) { console.error(e); }
+                }
+ 
                 // Check Faculty Unavailability
                 blockedSlots.forEach(block => {
                     // Simple hour-based overlap check for our fixed slots
@@ -430,14 +484,39 @@ $success = $_GET['success'] ?? '';
             
             badge.querySelector('span').className = 'px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 w-fit ' + 
                 (status === 'Available' ? 'bg-green-500/10 text-green-500' : 
-                 status === 'Busy' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-red-500/10 text-red-500');
+                 status === 'Busy' ? 'bg-orange-500/10 text-orange-500' : 'bg-red-500/10 text-red-500');
             
             dot.className = 'w-1.5 h-1.5 rounded-full status-dot ' + 
                 (status === 'Available' ? 'bg-green-500' : 
-                 status === 'Busy' ? 'bg-yellow-500' : 'bg-red-500');
+                 status === 'Busy' ? 'bg-orange-500' : 'bg-red-500');
         }
 
         window.onload = filterTimeSlots;
+
+        function handleLogout(event) {
+            event.preventDefault();
+            Swal.fire({
+                title: '<div class="text-left font-black tracking-tight text-xl text-white uppercase italic">Confirm Logout</div>',
+                text: 'Are you sure you want to end your student session?',
+                icon: 'warning',
+                background: '#0d121f',
+                color: '#f1f5f9',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Sign Out',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#e11d48',
+                cancelButtonColor: '#475569',
+                customClass: {
+                    popup: 'rounded-[2rem] border border-white/[0.08] shadow-2xl p-7 max-w-md',
+                    confirmButton: 'px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider cursor-pointer text-white',
+                    cancelButton: 'px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider cursor-pointer text-white'
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.location.href = 'logout.php';
+                }
+            });
+        }
     </script>
 </body>
 </html>

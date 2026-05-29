@@ -5,21 +5,28 @@ require_once 'db_connect.php';
 
 secure_session_start();
 
-// Redirect if already logged in
-if (isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
-    switch ($_SESSION['role']) {
-        case 'Student': header("Location: student_dashboard.php"); break;
-        case 'Faculty': header("Location: faculty_dashboard.php"); break;
-        case 'Admin':   header("Location: admin_dashboard.php"); break;
-    }
-    exit();
+// Keep login page visible even if user has an active session in another tab.
+// Role-isolated sessions are handled by session_helper.php; we explicitly use neutral context on login.
+if (isset($_COOKIE['ACTIVE_ROLE_SESSION'])) {
+    // Force neutral so this tab cannot attach to another role's session.
+    setcookie('ACTIVE_ROLE_SESSION', 'Neutral', [
+        'expires' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https'),
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
 }
+
 
 $error_message = "";
 if (isset($_GET['error'])) {
     switch ($_GET['error']) {
         case 'empty_fields': $error_message = "All terminals require identification."; break;
         case 'invalid_credentials': $error_message = "Access Denied: Invalid Credentials."; break;
+        case 'verify_required': $error_message = "Your email is not verified yet. Check your inbox for the verification link."; break;
+
         case 'timeout': $error_message = "Session Expired due to inactivity."; break;
         case 'session_breach': $error_message = "Security Alert: Session mismatch detected."; break;
         default: $error_message = "System Error: Contact Site Command."; break;
@@ -83,17 +90,7 @@ try {
         }
     </script>
 
-    <style type="text/tailwindcss">
-        @layer base {
-            body { @apply bg-slate-50 text-slate-900 transition-colors duration-700; }
-            .dark body { @apply bg-[#020617] text-slate-100; }
-        }
-        @layer components {
-            .glass-panel { @apply bg-white/80 dark:bg-[#0d121f]/80 backdrop-blur-3xl border border-slate-200/60 dark:border-white/5 shadow-2xl transition-all duration-500; }
-            .input-box { @apply bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl w-full pl-12 py-4 pr-12 text-sm font-bold focus:border-indigo-500 outline-none transition-all; }
-            .nav-btn { @apply w-12 h-12 rounded-2xl flex items-center justify-center bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-indigo-500 transition-all; }
-        }
-        
+    <style>
         .animate-float { animation: float 6s ease-in-out infinite; }
         @keyframes float {
             0%, 100% { transform: translateY(0); }
@@ -112,6 +109,17 @@ try {
         .entrance-stagger > *:nth-child(2) { animation-delay: 0.2s; }
         .entrance-stagger > *:nth-child(3) { animation-delay: 0.3s; }
         .entrance-stagger > *:nth-child(4) { animation-delay: 0.4s; }
+    </style>
+    <style type="text/tailwindcss">
+        @layer base {
+            body { @apply bg-slate-50 text-slate-900 transition-colors duration-700; }
+            .dark body { @apply bg-[#020617] text-slate-100; }
+        }
+        @layer components {
+            .glass-panel { @apply bg-white/80 dark:bg-[#0d121f]/80 backdrop-blur-3xl border border-slate-200/60 dark:border-white/5 shadow-2xl transition-all duration-500; }
+            .input-box { @apply bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl w-full pl-12 py-4 pr-12 text-sm font-bold focus:border-indigo-500 outline-none transition-all; }
+            .nav-btn { @apply w-12 h-12 rounded-2xl flex items-center justify-center bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-indigo-500 transition-all; }
+        }
     </style>
 </head>
 <body class="font-sans antialiased flex flex-col items-center justify-center min-h-screen p-6 py-20 relative">
@@ -133,7 +141,7 @@ try {
             <div class="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-indigo-600 shadow-2xl shadow-indigo-600/30 mb-8 border-4 border-white/10">
                 <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M12 7v14M12 7a2 2 0 1 0-4-1V5a2 2 0 1 1 4 0v2zM12 7a2 2 0 1 1 4-1V5a2 2 0 1 0-4 0v2z"/><path d="m15 13-3-3-3 3M12 10v9"/></svg>
             </div>
-            <h1 class="text-5xl font-black italic tracking-tighter uppercase mb-2">System <span class="text-indigo-600">Auth</span></h1>
+            <h1 class="text-5xl font-black italic tracking-tighter uppercase mb-2">Consult <span class="text-indigo-600">Care</span></h1>
             <p class="text-xs font-black uppercase tracking-[0.4em] text-slate-500">ConsultCare Management Cluster</p>
         </div>
 

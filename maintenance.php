@@ -1,5 +1,18 @@
 <?php
 require_once 'db_connect.php';
+require_once 'session_helper.php';
+
+// Allow users to exit this page back to login.
+if (isset($_GET['exit']) && $_GET['exit'] === '1') {
+    // Clear and destroy session so refresh/back doesn’t re-route back to maintenance.
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION = [];
+        session_unset();
+        session_destroy();
+    }
+    header('Location: login.php');
+    exit();
+}
 
 // Check if maintenance is actually on
 $maintenance_mode = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'maintenance_mode'")->fetchColumn() === '1';
@@ -62,18 +75,24 @@ if (!$maintenance_mode) {
             <p class="text-[11px] font-bold text-slate-500 italic uppercase">Expected completion: Soon.™</p>
         </div>
 
-        <div class="mt-16 flex justify-center gap-8 text-[10px] font-black uppercase tracking-widest text-slate-600">
-            <div class="flex items-center gap-2">
-                <div class="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
-                Database Sync
-            </div>
-            <div class="flex items-center gap-2">
-                <div class="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
-                Cache Flush
-            </div>
-            <div class="flex items-center gap-2">
-                <div class="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
-                Security Audit
+        <div class="mt-10 flex flex-col items-center gap-6">
+            <a href="maintenance.php?exit=1" class="inline-flex items-center justify-center px-8 py-4 rounded-[2rem] bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-indigo-600/30 transition-all">
+                Back to Login
+            </a>
+
+            <div class="mt-2 flex justify-center gap-8 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                <div class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
+                    Database Sync
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
+                    Cache Flush
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
+                    Security Audit
+                </div>
             </div>
         </div>
     </div>

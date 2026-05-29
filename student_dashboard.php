@@ -1,5 +1,20 @@
 <?php
 require_once 'security_headers.php';
+
+// Ensure this tab always attaches to the Student isolated session on refresh.
+if (empty($_COOKIE['ACTIVE_ROLE_SESSION']) || $_COOKIE['ACTIVE_ROLE_SESSION'] !== 'Student') {
+    setcookie('ACTIVE_ROLE_SESSION', 'Student', [
+        'expires' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ||
+            (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https'),
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+    $_COOKIE['ACTIVE_ROLE_SESSION'] = 'Student';
+}
+
 require_once 'session_helper.php';
 require_once 'db_connect.php';
 
@@ -97,7 +112,12 @@ try {
         ];
     }
 
-    // Fetch All Faculty with Profile and Contact parameters
+    // Fetch All Faculty with Profile and Contact parameters after auto-reverting any expired busy statuses
+    try {
+        $now_str = date('Y-m-d H:i:s');
+        $pdo->prepare("UPDATE users SET current_status = 'Available', busy_until = NULL WHERE current_status = 'Busy' AND busy_until <= ?")->execute([$now_str]);
+    } catch (PDOException $e) {}
+
     $faculty_stmt = $pdo->prepare("SELECT user_id, full_name, current_status, busy_until, biography, specialization, office_hours, contact_number, email, social_link FROM users WHERE role = 'Faculty'");
     $faculty_stmt->execute();
     $faculties = $faculty_stmt->fetchAll();
@@ -157,17 +177,32 @@ try {
         }
     </script>
 
+    <style>
+        :root {
+            --accent: #4f46e5;
+            --accent-glow: rgba(79, 70, 229, 0.15);
+        }
+        .dark {
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.2);
+        }
+        .animated-gradient {
+            background-size: 200% 200%;
+            animation: gradient 15s ease infinite;
+        }
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+    </style>
     <style type="text/tailwindcss">
         @layer base {
             body { 
                 @apply bg-slate-50 text-slate-900 transition-colors duration-500 overflow-x-hidden; 
-                --accent: #4f46e5;
-                --accent-glow: rgba(79, 70, 229, 0.15);
             }
             .dark body { 
                 @apply bg-[#06080f] text-slate-100; 
-                --accent: #6366f1;
-                --accent-glow: rgba(99, 102, 241, 0.2);
             }
         }
         @layer components {
@@ -189,16 +224,6 @@ try {
             .stat-badge {
                 @apply px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border;
             }
-        }
-        
-        .animated-gradient {
-            background-size: 200% 200%;
-            animation: gradient 15s ease infinite;
-        }
-        @keyframes gradient {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
         }
     </style>
 </head>
@@ -245,7 +270,7 @@ try {
                     <p class="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-right">Licensed Student</p>
                     <p class="text-sm font-bold text-slate-700 dark:text-slate-200"><?php echo htmlspecialchars($student_name); ?></p>
                 </div>
-                <a href="logout.php" class="w-10 h-10 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center border border-red-500/20 hover:bg-red-500 hover:text-white transition-all shadow-lg shadow-red-500/5">
+                <a href="logout.php" onclick="handleLogout(event)" class="w-10 h-10 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center border border-red-500/20 hover:bg-red-500 hover:text-white transition-all shadow-lg shadow-red-500/5">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 </a>
             </div>
@@ -485,20 +510,14 @@ try {
                                     <div class="flex flex-col items-end">
                                         <span class="stat-badge <?php 
                                             echo $f['current_status'] === 'Available' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 
-                                                 ($f['current_status'] === 'Busy' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'); 
+                                                 ($f['current_status'] === 'Busy' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'); 
                                         ?>">
                                             <?php echo htmlspecialchars($f['current_status']); ?>
                                         </span>
                                         <?php if ($f['current_status'] === 'Busy' && $f['busy_until']): ?>
-                                            <?php 
-                                                $busy_time = strtotime($f['busy_until']);
-                                                $diff = $busy_time - time();
-                                                $hours = ceil($diff / 3600);
-                                                if ($hours > 0):
-                                            ?>
-                                                <span class="text-[9px] font-black text-amber-500/60 uppercase tracking-tighter mt-1">Back in ~<?php echo $hours; ?>h</span>
-                                            <?php endif; ?>
+                                            <span class="text-[10px] font-extrabold text-orange-500 uppercase tracking-tight mt-1 busy-countdown" data-busy-until="<?php echo htmlspecialchars($f['busy_until']); ?>"></span>
                                         <?php endif; ?>
+
                                     </div>
                                 </div>
 
@@ -507,9 +526,9 @@ try {
                                 
                                 <?php 
                                 $f_status_lower = str_replace(' ', '_', strtolower($f['current_status']));
-                                $isUnavailable = ($f_status_lower === 'busy' || $f_status_lower === 'on_leave');
+                                $isUnavailable = ($f_status_lower === 'on_leave');
                                 if ($isUnavailable): 
-                                    $btn_text = ($f_status_lower === 'busy') ? 'FACULTY BUSY' : 'UNAVAILABLE';
+                                    $btn_text = 'ON LEAVE';
                                 ?>
                                     <button disabled class="mt-auto py-4 rounded-xl bg-slate-800 text-slate-500 text-xs font-black uppercase tracking-widest border border-transparent cursor-not-allowed text-center shadow-sm">
                                         <?php echo $btn_text; ?>
@@ -961,9 +980,62 @@ try {
         document.getElementById('bookingFacultyName').textContent = facultyName;
         document.getElementById('bookingModal').classList.remove('hidden');
         document.body.style.overflow = 'hidden';
-        
+
+        // Show busy countdown inside the booking modal (if faculty is Busy)
+        try {
+            const monthSelect = document.getElementById('appointment_month');
+            const daySelect = document.getElementById('appointment_day');
+            const monthVal = monthSelect ? monthSelect.value : null;
+            const dayVal = daySelect ? daySelect.value : null;
+
+            if (monthVal && dayVal) {
+                const res = await fetch(`api/get_faculty_availability.php?faculty_id=${facultyId}&month=${monthVal}&day=${dayVal}`);
+                const data = await res.json();
+
+                const existing = document.getElementById('modal-busy-countdown');
+                if (existing) existing.remove();
+
+                if (data && data.faculty_status === 'Busy' && data.busy_until) {
+                    const busyUntil = new Date(String(data.busy_until).replace(/-/g, '/'));
+                    const box = document.createElement('div');
+                    box.id = 'modal-busy-countdown';
+                    box.className = 'p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-500 text-xs font-bold mb-4';
+                    box.textContent = 'BUSY: Available after calculating...' ;
+
+                    const bookingForm = document.getElementById('bookingForm');
+                    if (bookingForm && bookingForm.firstChild) {
+                        bookingForm.insertBefore(box, bookingForm.firstChild);
+                    } else if (bookingForm) {
+                        bookingForm.appendChild(box);
+                    }
+
+                    const tick = () => {
+                        const remaining = Math.max(0, Math.floor((busyUntil.getTime() - Date.now()) / 1000));
+                        if (!box) return;
+                        if (remaining <= 0) {
+                            box.textContent = 'BUSY: Available now';
+                            return;
+                        }
+                        const hours = Math.floor(remaining / 3600);
+                        const minutes = Math.floor((remaining % 3600) / 60);
+                        const seconds = remaining % 60;
+                        const timeLeft = hours > 0
+                            ? `${hours}h ${String(minutes).padStart(2, '0')}m`
+                            : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                        box.textContent = `BUSY: Available in ${timeLeft}`;
+                    };
+
+                    tick();
+                    box._interval = setInterval(tick, 1000);
+                }
+            }
+        } catch (err) {
+            // ignore UI countdown errors; slot filtering still works
+        }
+
         filterTimeSlots();
     }
+
 
     function closeBookingModal() {
         document.getElementById('bookingModal').classList.add('hidden');
@@ -1024,6 +1096,65 @@ try {
             if (data && !data.error) {
                 blockedSlots = data.unavailable_slots || [];
                 bookedSlots = data.booked_slots || [];
+                
+                // Block slot selection if faculty status is On Leave, or check duration if Busy
+                const facultyStatus = data.faculty_status || 'Available';
+                const statusNormalized = facultyStatus.toLowerCase().replace(' ', '_');
+                const isFacultyOnLeave = (statusNormalized === 'on_leave');
+                
+                const submitBtn = document.getElementById('submitBtn');
+                const slotErrorMsg = document.getElementById('modal-status-warning');
+                
+                if (isFacultyOnLeave) {
+                    const errorText = `ON LEAVE: This instructor is not accepting appointments right now.`;
+                    if (!slotErrorMsg) {
+                        const warningDiv = document.createElement('div');
+                        warningDiv.id = 'modal-status-warning';
+                        warningDiv.className = 'p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold mb-4';
+                        warningDiv.textContent = errorText;
+                        document.getElementById('bookingForm').insertBefore(warningDiv, document.getElementById('bookingForm').firstChild);
+                    } else {
+                        slotErrorMsg.textContent = errorText;
+                        slotErrorMsg.className = 'p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold mb-4';
+                        slotErrorMsg.classList.remove('hidden');
+                    }
+                    if (submitBtn) {
+                        submitBtn.disabled = true;
+                        submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    }
+                } else if (statusNormalized === 'busy' && data.busy_until) {
+                    let busyTimeStr = "";
+                    try {
+                        const busyDate = new Date(data.busy_until.replace(/-/g, '/'));
+                        busyTimeStr = busyDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    } catch (err) {
+                        busyTimeStr = data.busy_until;
+                    }
+                    const infoText = `BUSY: This instructor is unavailable until ${busyTimeStr}. Today's slots before this time are locked.`;
+                    if (!slotErrorMsg) {
+                        const warningDiv = document.createElement('div');
+                        warningDiv.id = 'modal-status-warning';
+                        warningDiv.className = 'p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-500 text-xs font-bold mb-4';
+                        warningDiv.textContent = infoText;
+                        document.getElementById('bookingForm').insertBefore(warningDiv, document.getElementById('bookingForm').firstChild);
+                    } else {
+                        slotErrorMsg.textContent = infoText;
+                        slotErrorMsg.className = 'p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-500 text-xs font-bold mb-4';
+                        slotErrorMsg.classList.remove('hidden');
+                    }
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+                } else {
+                    if (slotErrorMsg) {
+                        slotErrorMsg.classList.add('hidden');
+                    }
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+                }
             }
         } catch (e) { console.error("Filter failed", e); }
         
@@ -1034,6 +1165,24 @@ try {
 
             if (isToday && slotHour <= currentHour) isBlocked = true;
             if (bookedSlots.includes(slotRange)) isBlocked = true;
+
+            // Block busy duration slots
+            if (data && data.faculty_status === 'Busy' && data.busy_until && isToday) {
+                try {
+                    const busyUntilDate = new Date(data.busy_until.replace(/-/g, '/'));
+                    const slotPart = slotRange.split(' - ')[0];
+                    const nowYear = now.getFullYear();
+                    const slotDate = new Date(nowYear, selectedMonth - 1, selectedDay);
+                    const [timeStr, ampm] = slotPart.split(' ');
+                    let [h, m] = timeStr.split(':').map(Number);
+                    if (ampm === 'PM' && h < 12) h += 12;
+                    if (ampm === 'AM' && h === 12) h = 0;
+                    slotDate.setHours(h, m, 0, 0);
+                    if (slotDate < busyUntilDate) {
+                        isBlocked = true;
+                    }
+                } catch (e) { console.error(e); }
+            }
 
             blockedSlots.forEach(block => {
                 const bStart = parseInt(block.start_time.split(':')[0]);
@@ -1117,6 +1266,58 @@ try {
         box.classList.add('scale-95', 'opacity-0');
         setTimeout(() => overlay.classList.add('hidden'), 300);
     }
+
+    function handleLogout(event) {
+        event.preventDefault();
+        Swal.fire({
+            title: '<div class="text-left font-black tracking-tight text-xl text-white uppercase italic">Confirm Logout</div>',
+            text: 'Are you sure you want to end your student session?',
+            icon: 'warning',
+            background: '#0d121f',
+            color: '#f1f5f9',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Sign Out',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#e11d48',
+            cancelButtonColor: '#475569',
+            customClass: {
+                popup: 'rounded-[2rem] border border-white/[0.08] shadow-2xl p-7 max-w-md',
+                confirmButton: 'px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider cursor-pointer text-white',
+                cancelButton: 'px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider cursor-pointer text-white'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = 'logout.php';
+            }
+        });
+    }
+
+    function updateBusyCountdowns() {
+        document.querySelectorAll('.busy-countdown').forEach(el => {
+            const rawUntil = el.dataset.busyUntil;
+            if (!rawUntil) return;
+
+            const busyUntil = new Date(rawUntil.replace(/-/g, '/'));
+            const remaining = Math.max(0, Math.floor((busyUntil.getTime() - Date.now()) / 1000));
+
+            if (remaining <= 0) {
+                el.textContent = 'Available now';
+                return;
+            }
+
+            const hours = Math.floor(remaining / 3600);
+            const minutes = Math.floor((remaining % 3600) / 60);
+            const seconds = remaining % 60;
+            const timeLeft = hours > 0
+                ? `${hours}h ${String(minutes).padStart(2, '0')}m`
+                : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+            el.textContent = `Available in ${timeLeft}`;
+        });
+    }
+
+    updateBusyCountdowns();
+    setInterval(updateBusyCountdowns, 1000);
 </script>
 </body>
 </html>

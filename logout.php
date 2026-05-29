@@ -1,6 +1,20 @@
 <?php
 // logout.php
-session_start();
+require_once 'session_helper.php';
+
+// Clear role-isolation cookie so next login starts neutral
+if (ini_get("session.use_cookies")) {
+    // Set explicit Neutral value (and also expire it) so different browsers/proxies behave consistently.
+    setcookie('ACTIVE_ROLE_SESSION', 'Neutral', [
+        'expires' => time() - 42000,
+        'path' => '/',
+        'domain' => '',
+        'secure' => false,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+}
+
 
 // Unset all session variables
 $_SESSION = array();

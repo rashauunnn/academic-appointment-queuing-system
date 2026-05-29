@@ -47,14 +47,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("UPDATE users SET current_status = 'Available', busy_until = NULL WHERE current_status = 'Busy' AND busy_until <= ?")->execute([$now_str]);
         } catch (PDOException $pe) {}
 
-        // Strict Status Lock: Prevent booking Busy or On Leave instructors
-        $status_stmt = $pdo->prepare("SELECT current_status FROM users WHERE user_id = ?");
+        // Strict Status Lock: prevent booking On Leave or during an active Busy window.
+        $status_stmt = $pdo->prepare("SELECT current_status, busy_until FROM users WHERE user_id = ?");
         $status_stmt->execute([$faculty_id]);
-        $faculty_status = $status_stmt->fetchColumn() ?: 'Available';
+        $faculty_row = $status_stmt->fetch(PDO::FETCH_ASSOC);
+        $faculty_status = $faculty_row['current_status'] ?? 'Available';
+        $busy_until = $faculty_row['busy_until'] ?? null;
         $faculty_status_lower = str_replace(' ', '_', strtolower($faculty_status));
-        if ($faculty_status_lower === 'busy' || $faculty_status_lower === 'on_leave') {
-            header("Location: book_appointment.php?error=faculty_unavailable");
+
+        if ($faculty_status_lower === 'on_leave') {
+            header("Location: book_appointment.php?error=faculty_unavailable&status=" . urlencode("On Leave"));
             exit();
+        }
+
+        if ($faculty_status_lower === 'busy') {
+            $today = date('Y-m-d');
+            if ($appointment_date === $today && $busy_until) {
+                $slotStartStr = explode(' - ', $time_slot)[0];
+                $slot_timestamp = strtotime($appointment_date . ' ' . $slotStartStr);
+                $busy_until_timestamp = strtotime($busy_until);
+                if ($slot_timestamp < $busy_until_timestamp) {
+                    header("Location: book_appointment.php?error=faculty_unavailable&status=" . urlencode("Busy") . "&busy_until=" . urlencode($busy_until));
+                    exit();
+                }
+            }
         }
 
         // 1. Past Time Validation

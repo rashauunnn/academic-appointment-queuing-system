@@ -1,8 +1,8 @@
 <?php
 // security_headers.php
 
-// Prevent Clickjacking
-header("X-Frame-Options: SAMEORIGIN");
+// Allow embedding in frames (required for AI Studio iframe preview)
+header("X-Frame-Options: ALLOWALL");
 
 // Prevent Content Sniffing
 header("X-Content-Type-Options: nosniff");
@@ -11,8 +11,9 @@ header("X-Content-Type-Options: nosniff");
 header("X-XSS-Protection: 1; mode=block");
 
 // Referrer Policy
-header("Referrer-Policy: strict-origin-when-cross-origin");
+header("Referrer-Policy: no-referrer-when-downgrade");
 
-// Content Security Policy (Basic) - Allow scripts from trusted sources
-// Note: In a production app, this should be more granular
-header("Content-Security-Policy: default-src 'self' tel: mailto:; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://images.unsplash.com; connect-src 'self'; frame-ancestors 'self';");
+// Relaxed Content Security Policy for flawless loading of design libraries (Tailwind play CDN, Google Fonts, SweetAlert, Lucide Icons, etc.)
+header("Content-Security-Policy: default-src 'self' * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' *; style-src 'self' 'unsafe-inline' *; font-src 'self' data: *; img-src 'self' data: blob: *; connect-src 'self' *; frame-ancestors 'self' *;");
+
+
