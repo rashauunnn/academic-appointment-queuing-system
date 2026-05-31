@@ -1,10 +1,13 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
-// booking_process.php
+require_once 'security_headers.php';
+require_once 'session_helper.php';
 require_once 'db_connect.php';
 
-// Authentication Guard
-if (!isset($_SESSION['student_id'])) {
+// Role Guard
+check_session_role('Student');
+
+$student_id = $_SESSION['student_id'] ?? $_SESSION['user_id'];
+if (!$student_id) {
     header("Location: login.php");
     exit();
 }

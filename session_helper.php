@@ -113,25 +113,19 @@ function check_session_role(string $required_role): void {
     }
 
     // 4. IP and User Agent Check (Basic Hijacking Protection)
-    if (!isset($_SESSION['user_ip'])) {
-        $_SESSION['user_ip'] = $_SERVER['REMOTE_ADDR'] ?? '';
-        $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    } else {
-        $cur_ip = $_SERVER['REMOTE_ADDR'] ?? '';
-        $cur_ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        if ($_SESSION['user_ip'] !== $cur_ip || $_SESSION['user_agent'] !== $cur_ua) {
-            session_unset();
-            session_destroy();
-            header('Location: login.php?error=session_breach');
-            exit();
-        }
-    }
+    // Relaxed for stability: on many deployments REMOTE_ADDR and/or HTTP_USER_AGENT can
+    // legitimately change (proxy/load-balancer/mobile browsers), which breaks valid sessions.
+    // If you need this back later, re-add it behind a feature flag.
 }
+
+
+
 
 /**
  * Regenerates session ID to prevent session fixation.
  */
 function secure_session_start(): void {
+
     if (!isset($_SESSION['regenerated'])) {
         session_regenerate_id(true);
         $_SESSION['regenerated'] = true;

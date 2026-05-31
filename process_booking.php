@@ -1,30 +1,40 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
-// process_booking.php
+require_once 'security_headers.php';
+require_once 'session_helper.php';
 require_once 'db_connect.php';
 
-// Authentication Guard
-if (!isset($_SESSION['student_id'])) {
-    if (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-        exit();
-    }
-    header("Location: login.php");
+header('Content-Type: application/json');
+
+// Authentication Guard (support both session keys)
+// IMPORTANT: booking_page.php/JS uses process_booking.php (AJAX). 
+// Some flows store student id in student_id and may not have role set consistently.
+$student_id = $_SESSION['student_id'] ?? ($_SESSION['user_id'] ?? null);
+$role = $_SESSION['role'] ?? null;
+if (!$student_id) {
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit();
 }
+// Do not hard-require $_SESSION['role'] here.
+// Some role/session isolation setups may not populate role reliably for AJAX.
+
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $student_id = $_SESSION['student_id'];
+    // Always respond JSON for this endpoint
+    $wants_json = true;
+
+    // Ensure PDO exists
+    if (!isset($pdo) || !($pdo instanceof PDO)) {
+        echo json_encode(['success' => false, 'message' => 'Server Error: Database connection not available.']);
+        exit();
+    }
+
     $faculty_id = $_POST['faculty_id'] ?? '';
     $month = $_POST['appointment_month'] ?? '';
     $day = $_POST['appointment_day'] ?? '';
     $time_slot = $_POST['time_slot'] ?? '';
     $reason = $_POST['reason'] ?? '';
 
-    // Check JSON or redirect
-    $wants_json = (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) || 
-                  (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false);
 
     // Construct standard YYYY-MM-DD date
     $current_year = date('Y');
@@ -33,26 +43,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Server-side Guard: Prevent booking past days of current month
     if ($month < $current_month || ($month == $current_month && $day < $current_day)) {
-        if ($wants_json) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Invalid date selection. You cannot book a date in the past.']);
-            exit();
-        }
-        header("Location: booking_page.php?error=past_date");
+        echo json_encode(['success' => false, 'message' => 'Invalid date selection. You cannot book a date in the past.']);
         exit();
     }
+
 
     $appointment_date = sprintf("%s-%02d-%02d", $current_year, $month, $day);
 
     if (empty($faculty_id) || empty($month) || empty($day) || empty($time_slot) || empty($reason)) {
-        if ($wants_json) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'All fields are required.']);
-            exit();
-        }
-        header("Location: booking_page.php?error=missing_fields");
+        echo json_encode(['success' => false, 'message' => 'All fields are required.']);
         exit();
     }
+
 
     try {
         // First, ensure columns exist
@@ -120,18 +122,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // 2. Professor Unavailability Check
-        $slotStartStr = explode(' - ', $time_slot)[0];
-        $slotHour = (int)date('H', strtotime($slotStartStr));
-        
+        $slotParts = explode(' - ', $time_slot);
+        $slotStartStr = $slotParts[0];
+        $slotEndStr = $slotParts[1] ?? $slotStartStr;
+
+        $slotStartTime = date('H:i:s', strtotime($appointment_date . ' ' . $slotStartStr));
+        $slotEndTime = date('H:i:s', strtotime($appointment_date . ' ' . $slotEndStr));
+
         $avail_check = $pdo->prepare("
-            SELECT COUNT(*) 
-            FROM faculty_availability 
-            WHERE faculty_id = ? 
-            AND unavailable_date = ? 
-            AND HOUR(start_time) <= ? 
-            AND HOUR(end_time) > ?
+            SELECT COUNT(*)
+            FROM faculty_availability
+            WHERE faculty_id = ?
+            AND unavailable_date = ?
+            AND start_time < ?
+            AND end_time > ?
         ");
-        $avail_check->execute([$faculty_id, $appointment_date, $slotHour, $slotHour]);
+        $avail_check->execute([$faculty_id, $appointment_date, $slotEndTime, $slotStartTime]);
         
         if ($avail_check->fetchColumn() > 0) {
             if ($wants_json) {

@@ -1,16 +1,19 @@
 <?php
 require_once '../security_headers.php';
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once '../session_helper.php';
 require_once '../db_connect.php';
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['student_id'])) {
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+$student_id = $_SESSION['student_id'] ?? ($_SESSION['user_id'] ?? null);
+if (!$student_id) {
+    // Debug hint: helps pinpoint session isolation problems in dev
+    echo json_encode(['success' => false, 'message' => 'Unauthorized', 'debug' => ['has_student_id' => isset($_SESSION['student_id']), 'has_user_id' => isset($_SESSION['user_id']), 'active_role_session' => ($_COOKIE['ACTIVE_ROLE_SESSION'] ?? null), 'session_role' => ($_SESSION['role'] ?? null)]]);
     exit();
 }
 
-$student_id = $_SESSION['student_id'];
+
+
 $faculty_id = $_POST['faculty_id'] ?? '';
 $month = $_POST['appointment_month'] ?? '';
 $day = $_POST['appointment_day'] ?? '';
@@ -53,29 +56,49 @@ try {
         $pdo->prepare("UPDATE users SET current_status = 'Available', busy_until = NULL WHERE current_status = 'Busy' AND busy_until <= ?")->execute([$now_str]);
     } catch (PDOException $pe) {}
 
-    // Strict Status Lock: Prevent booking Busy or On Leave instructors
-    $status_stmt = $pdo->prepare("SELECT current_status FROM users WHERE user_id = ?");
+    // Strict Status Lock: prevent booking On Leave or during an active Busy window.
+    $status_stmt = $pdo->prepare("SELECT current_status, busy_until FROM users WHERE user_id = ?");
     $status_stmt->execute([$faculty_id]);
-    $faculty_status = $status_stmt->fetchColumn() ?: 'Available';
+    $faculty_row = $status_stmt->fetch(PDO::FETCH_ASSOC);
+    $faculty_status = $faculty_row['current_status'] ?? 'Available';
+    $busy_until = $faculty_row['busy_until'] ?? null;
     $faculty_status_lower = str_replace(' ', '_', strtolower($faculty_status));
-    if ($faculty_status_lower === 'busy' || $faculty_status_lower === 'on_leave') {
-        echo json_encode(['success' => false, 'message' => 'Status Conflict: This faculty is currently unavailable for consultation.']);
+
+    if ($faculty_status_lower === 'on_leave') {
+        echo json_encode(['success' => false, 'message' => 'On Leave: This instructor is not accepting appointments right now.']);
         exit();
     }
 
+    if ($faculty_status_lower === 'busy') {
+        $today = date('Y-m-d');
+        if ($appointment_date === $today && $busy_until) {
+            $slotStartStr = explode(' - ', $time_slot)[0];
+            $slot_timestamp = strtotime($appointment_date . ' ' . $slotStartStr);
+            $busy_until_timestamp = strtotime($busy_until);
+            if ($slot_timestamp < $busy_until_timestamp) {
+                echo json_encode(['success' => false, 'message' => 'Busy: This instructor is unavailable until ' . date('h:i A', $busy_until_timestamp) . '. Please select a slot that begins after this time.']);
+                exit();
+            }
+        }
+    }
+
     // 2. Professor Unavailability Check
-    $slotStartStr = explode(' - ', $time_slot)[0];
-    $slotHour = (int)date('H', strtotime($slotStartStr));
-    
+    $slotParts = explode(' - ', $time_slot);
+    $slotStartStr = $slotParts[0];
+    $slotEndStr = $slotParts[1] ?? $slotStartStr;
+
+    $slotStartTime = date('H:i:s', strtotime($appointment_date . ' ' . $slotStartStr));
+    $slotEndTime = date('H:i:s', strtotime($appointment_date . ' ' . $slotEndStr));
+
     $avail_check = $pdo->prepare("
-        SELECT COUNT(*) 
-        FROM faculty_availability 
-        WHERE faculty_id = ? 
-        AND unavailable_date = ? 
-        AND HOUR(start_time) <= ? 
-        AND HOUR(end_time) > ?
+        SELECT COUNT(*)
+        FROM faculty_availability
+        WHERE faculty_id = ?
+        AND unavailable_date = ?
+        AND start_time < ?
+        AND end_time > ?
     ");
-    $avail_check->execute([$faculty_id, $appointment_date, $slotHour, $slotHour]);
+    $avail_check->execute([$faculty_id, $appointment_date, $slotEndTime, $slotStartTime]);
     
     if ($avail_check->fetchColumn() > 0) {
         echo json_encode(['success' => false, 'message' => 'Conflict detected: The professor has marked this slot as unavailable (Break/Meeting).']);

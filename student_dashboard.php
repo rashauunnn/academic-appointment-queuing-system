@@ -133,6 +133,14 @@ try {
     $history_stmt->execute([$student_id]);
     $appointment_history = $history_stmt->fetchAll();
 
+    $latest_declined = null;
+    foreach ($appointment_history as $history_item) {
+        if (isset($history_item['status']) && $history_item['status'] === 'Declined') {
+            $latest_declined = $history_item;
+            break;
+        }
+    }
+
 } catch (PDOException $e) {
     die("Database Error: " . $e->getMessage());
 }
@@ -228,6 +236,23 @@ try {
     </style>
 </head>
 <body class="font-sans antialiased min-h-screen">
+
+    <?php if (!empty($latest_declined)): ?>
+        <div class="mx-auto max-w-7xl px-6 py-4">
+            <div class="rounded-3xl border border-rose-500/20 bg-rose-500/10 p-6 text-rose-50 shadow-lg shadow-rose-500/10">
+                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <p class="text-[10px] uppercase tracking-[0.3em] font-black text-rose-200">Booking Declined</p>
+                        <p class="mt-2 text-sm text-white">Your booking request with <span class="font-semibold text-white"><?php echo htmlspecialchars($latest_declined['faculty_name']); ?></span> was declined.</p>
+                        <?php if (!empty($latest_declined['cancel_reason'])): ?>
+                            <p class="mt-2 text-sm text-rose-100/90">Reason: <?php echo htmlspecialchars($latest_declined['cancel_reason']); ?></p>
+                        <?php endif; ?>
+                    </div>
+                    <div class="inline-flex items-center rounded-2xl bg-white/10 px-4 py-2 text-[10px] uppercase tracking-[0.3em] font-black text-white border border-white/10">Review History</div>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <!-- Navbar -->
     <nav class="sticky top-0 z-[60] px-8 py-4 glass-card rounded-none border-x-0 border-t-0 shadow-xl flex items-center justify-between">
@@ -1166,8 +1191,9 @@ try {
             if (isToday && slotHour <= currentHour) isBlocked = true;
             if (bookedSlots.includes(slotRange)) isBlocked = true;
 
-            // Block busy duration slots
-            if (data && data.faculty_status === 'Busy' && data.busy_until && isToday) {
+            // Block busy duration slots (guard against missing/undefined `data`)
+            if (typeof data !== 'undefined' && data && data.faculty_status === 'Busy' && data.busy_until && isToday) {
+
                 try {
                     const busyUntilDate = new Date(data.busy_until.replace(/-/g, '/'));
                     const slotPart = slotRange.split(' - ')[0];

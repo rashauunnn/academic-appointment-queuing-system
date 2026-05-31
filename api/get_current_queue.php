@@ -1,7 +1,8 @@
 <?php
 // api/get_current_queue.php
+require_once '../security_headers.php';
+require_once '../session_helper.php';
 require_once '../db_connect.php';
-session_start();
 
 header('Content-Type: application/json');
 

@@ -1,12 +1,18 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once 'security_headers.php';
+require_once 'session_helper.php';
 require_once 'db_connect.php';
 
 // Para siguradong JSON ang ibabalik natin sa JS
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id'])) {
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
     echo json_encode(['success' => false, 'error' => 'Session expired. Please login again.']);
+    exit();
+}
+
+if ($_SESSION['role'] !== 'Student') {
+    echo json_encode(['success' => false, 'error' => 'Unauthorized role.']);
     exit();
 }
 

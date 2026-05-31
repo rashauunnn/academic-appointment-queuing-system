@@ -281,14 +281,26 @@ $maintenance_mode = $pdo->query("SELECT setting_value FROM system_settings WHERE
 
 // --- Fetch Tables ---
 $users = $pdo->query("SELECT * FROM users ORDER BY role DESC, full_name ASC")->fetchAll();
-$logs = $pdo->query("
-    SELECT a.*, s.full_name as student_name, f.full_name as faculty_name 
-    FROM appointments a 
-    JOIN users s ON a.student_id = s.user_id 
-    JOIN users f ON a.faculty_id = f.user_id 
-    ORDER BY a.created_at DESC 
-    LIMIT 100
-")->fetchAll();
+// Archive logs (defensive ordering: some schemas may not have created_at)
+try {
+    $logs = $pdo->query("
+        SELECT a.*, s.full_name as student_name, f.full_name as faculty_name 
+        FROM appointments a 
+        JOIN users s ON a.student_id = s.user_id 
+        JOIN users f ON a.faculty_id = f.user_id 
+        ORDER BY a.created_at DESC 
+        LIMIT 100
+    ")->fetchAll();
+} catch (PDOException $e) {
+    $logs = $pdo->query("
+        SELECT a.*, s.full_name as student_name, f.full_name as faculty_name 
+        FROM appointments a 
+        JOIN users s ON a.student_id = s.user_id 
+        JOIN users f ON a.faculty_id = f.user_id 
+        ORDER BY a.appointment_date DESC, a.time_slot DESC, a.app_id DESC 
+        LIMIT 100
+    ")->fetchAll();
+}
 
 ?>
 <!DOCTYPE html>

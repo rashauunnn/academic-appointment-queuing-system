@@ -69,7 +69,7 @@ try {
 // Handle actions (call, complete, noshow, call_next, update_profile, unavailability, etc.)
 if (isset($_GET['action'])) {
     $action = $_GET['action'];
-    $app_id = $_GET['app_id'] ?? null;
+    $app_id = $_GET['app_id'] ?? $_POST['app_id'] ?? null;
     $status_val = $_GET['status_val'] ?? null;
     $avail_id = $_GET['avail_id'] ?? null;
 
